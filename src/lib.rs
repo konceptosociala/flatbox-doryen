@@ -1,110 +1,149 @@
-// use despero::{WindowBuilder, Despero};
-// use doryen_rs::{AppOptions, Engine, DoryenApi, UpdateEvent};
+use std::ops::{Deref, DerefMut};
 
-// impl From<WindowBuilderWrapper> for AppOptions {
-//     fn from(source: WindowBuilderWrapper) -> Self {
-//         AppOptions::default()
-//     }
-// }
+use sonja::prelude::*;
+use doryen_rs::{AppOptions, Engine, DoryenApi, UpdateEvent, DEFAULT_CONSOLE_WIDTH, DEFAULT_CONSOLE_HEIGHT, App};
 
-// #[derive(Default, Clone, Debug)]
-// pub struct WindowBuilderWrapper {
-//     pub inner: WindowBuilder,
-// }
+pub mod color;
+pub mod input;
+pub mod prelude; 
 
-// impl WindowBuilderWrapper {
-//     pub fn new() -> Self {
-//         WindowBuilderWrapper::default()
-//     }
-// }
+use crate::color::RegisterColors;
 
-// impl From<WindowBuilder> for WindowBuilderWrapper {
-//     fn from(source: WindowBuilder) -> Self {
-//         WindowBuilderWrapper { inner: source }
-//     }
-// }
+struct SonjaDoryen {
+    pub sonja: Sonja,
+}
 
-// impl Engine for Despero {
-//     fn init(&mut self, api: &mut dyn DoryenApi) {
-//         api.con().register_color("white", (255, 255, 255, 255));
-//         api.con().register_color("red", (255, 92, 92, 255));
-//         api.con().register_color("blue", (192, 192, 255, 255));
-//     }
-//     fn update(&mut self, api: &mut dyn DoryenApi) -> Option<UpdateEvent> {
-//         let input = api.input();
-//         if input.key("Left") {
-//             self.player_pos.0 = (self.player_pos.0 - 1).max(1);
-//         } else if input.key("Right") {
-//             self.player_pos.0 = (self.player_pos.0 + 1).min(CONSOLE_WIDTH as i32 - 2);
-//         }
-//         if input.key("Up") {
-//             self.player_pos.1 = (self.player_pos.1 - 1).max(1);
-//         } else if input.key("Down") {
-//             self.player_pos.1 = (self.player_pos.1 + 1).min(CONSOLE_HEIGHT as i32 - 2);
-//         }
-//         self.mouse_pos = input.mouse_pos();
+impl SonjaDoryen {
+    fn is_exit(&self) -> bool {
+        match self.sonja.events.get_handler::<AppExit>().unwrap().read() {
+            Some(_) => true,
+            _ => false,
+        }
+    }
+}
 
-//         // capture the screen
-//         if input.key("LCtrl") && input.key_pressed("S") {
-//             self.screenshot_idx += 1;
-//             return Some(UpdateEvent::Capture(format!(
-//                 "screenshot_{:03}.png",
-//                 self.screenshot_idx
-//             )));
-//         }
+impl Engine for SonjaDoryen {
+    fn init(&mut self, _api: &mut dyn DoryenApi) {
+        let mut setup_systems = self.sonja.setup_systems.build();
 
-//         None
-//     }
-//     fn render(&mut self, api: &mut dyn DoryenApi) {
-//         let con = api.con();
-//         con.rectangle(
-//             0,
-//             0,
-//             CONSOLE_WIDTH,
-//             CONSOLE_HEIGHT,
-//             Some((128, 128, 128, 255)),
-//             Some((0, 0, 0, 255)),
-//             Some('.' as u16),
-//         );
-//         con.area(
-//             10,
-//             10,
-//             5,
-//             5,
-//             Some((255, 64, 64, 255)),
-//             Some((128, 32, 32, 255)),
-//             Some('&' as u16),
-//         );
-//         con.ascii(self.player_pos.0, self.player_pos.1, '@' as u16);
-//         con.fore(self.player_pos.0, self.player_pos.1, (255, 255, 255, 255));
-//         con.print_color(
-//             (CONSOLE_WIDTH / 2) as i32,
-//             (CONSOLE_HEIGHT - 1) as i32,
-//             "#[red]arrows#[white] : move - #[red]CTRL-S#[white] : save screenshot",
-//             TextAlign::Center,
-//             None,
-//         );
-//         con.print_color(
-//             (CONSOLE_WIDTH / 2) as i32,
-//             (CONSOLE_HEIGHT - 3) as i32,
-//             &format!(
-//                 "#[white]Mouse coordinates: #[red]{}, {}",
-//                 self.mouse_pos.0, self.mouse_pos.1
-//             ),
-//             TextAlign::Center,
-//             None,
-//         );
-//         con.print_color(
-//             5,
-//             5,
-//             "#[blue]This blue text contains a #[red]red#[] word",
-//             TextAlign::Left,
-//             None,
-//         );
-//         con.back(
-//             self.mouse_pos.0 as i32,
-//             self.mouse_pos.1 as i32,
-//             (255, 255, 255, 255),
-//         );
-//     }
-// }
+        setup_systems.execute((
+            &mut self.sonja.world,
+            &mut self.sonja.events,
+            &mut self.sonja.time_handler,
+            &mut self.sonja.physics_handler,
+            &mut self.sonja.asset_manager,
+        )).expect("Cannot execute setup schedule");
+    }
+
+    fn update(&mut self, api: &mut dyn DoryenApi) -> Option<UpdateEvent> {
+        let mut systems = self.sonja.systems.build();
+
+        systems.execute((
+            &mut self.sonja.world,
+            &mut self.sonja.events,
+            &mut self.sonja.time_handler,
+            &mut self.sonja.physics_handler,
+            &mut self.sonja.asset_manager,
+        )).expect("Cannot execute setup schedule");
+
+        // Register colors
+        let mut color_events = self.sonja.events.get_handler::<RegisterColors>().unwrap();
+        if let Some(colors) = color_events.read() {
+            for (name, value) in colors.colors {
+                api.con().register_color(name, value);
+            }
+        }
+        color_events.clear();
+        
+        // Check quit
+        if self.is_exit() {
+            Some(UpdateEvent::Exit)
+        } else {
+            None
+        }
+    }
+
+    fn render(&mut self, _api: &mut dyn DoryenApi) {
+    
+    }
+}
+
+pub struct DoryenExtension;
+
+impl Extension for DoryenExtension {
+    fn apply(&self, app: &mut Sonja) {
+        app
+            .add_events::<RegisterColors>()
+            .add_events::<AppExit>()
+
+            .set_runner(Box::new(sonja_doryen_run));
+    }
+}
+
+fn sonja_doryen_run(s: &mut Sonja){
+    let mut sonja = Sonja::init(WindowBuilder {
+        init_logger: Some(false), 
+        ..Default::default()
+    });
+    std::mem::swap(s, &mut sonja);
+
+    let mut app = App::new(AppOptions::from(
+        WindowBuilderWrapper {
+            inner: sonja.window_builder.clone()
+        }
+    ));
+
+    app.set_engine(Box::new(SonjaDoryen { sonja }));
+    app.run();
+}
+
+impl From<WindowBuilderWrapper> for AppOptions {
+    fn from(source: WindowBuilderWrapper) -> Self {
+        AppOptions {
+            window_title: source.title.unwrap_or("Doryen game").to_owned(),
+            fullscreen: source.fullscreen.unwrap_or(false),
+            resizable: source.resizable.unwrap_or(true),
+            
+            console_width: DEFAULT_CONSOLE_WIDTH,
+            console_height: DEFAULT_CONSOLE_HEIGHT,
+            screen_width: DEFAULT_CONSOLE_WIDTH * 8,
+            screen_height: DEFAULT_CONSOLE_HEIGHT * 8,
+            font_path: "Aesomatica_16x16.png".to_owned(),
+            vsync: true,
+            show_cursor: false,
+            intercept_close_request: false,
+            max_fps: 0,
+        }
+    }
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct WindowBuilderWrapper {
+    pub inner: WindowBuilder,
+}
+
+impl WindowBuilderWrapper {
+    pub fn new() -> Self {
+        WindowBuilderWrapper::default()
+    }
+}
+
+impl From<WindowBuilder> for WindowBuilderWrapper {
+    fn from(source: WindowBuilder) -> Self {
+        WindowBuilderWrapper { inner: source }
+    }
+}
+
+impl Deref for WindowBuilderWrapper {
+    type Target = WindowBuilder;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for WindowBuilderWrapper {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}

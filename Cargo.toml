@@ -1,8 +1,9 @@
 [package]
-name = "despero-doryen"
+name = "sonja-doryen"
 version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-despero = { path = "../despero", default-features = false }
+parking_lot = "0.12.1"
+sonja = { path = "../sonja", default-features = false }
 doryen-rs = "1.3.0"
