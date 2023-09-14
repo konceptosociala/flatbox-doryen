@@ -1,4 +1,8 @@
-pub use crate::{DoryenExtension, register_colors};
+pub use crate::{DoryenRenderSystemExt, DoryenExtension};
 
-pub use crate::color::{Color, RegisterColors};
-pub use crate::input::*;
+pub use crate::gui::{self, GuiContext};
+pub use crate::utils::{
+    doryen::Color,
+    console::{ConsoleState, RawConsole},
+    input::*,
+};

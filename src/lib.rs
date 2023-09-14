@@ -1,19 +1,52 @@
-use std::ops::{Deref, DerefMut};
-
 use sonja::prelude::*;
-use doryen_rs::{AppOptions, Engine, DoryenApi, UpdateEvent, DEFAULT_CONSOLE_WIDTH, DEFAULT_CONSOLE_HEIGHT, App};
 
-pub mod color;
-pub mod input;
+pub mod game;
+pub mod gui;
+pub mod utils;
 pub mod prelude; 
 
-use crate::color::RegisterColors;
+use crate::utils::{
+    WindowBuilderWrapper,
+    doryen::{App, AppOptions, Engine, DoryenApi, UpdateEvent},
+    console::RawConsole,
+};
+
+use crate::gui::GuiContext;
+
+pub trait DoryenRenderSystemExt {
+    fn add_render_system<Args, Ret, S>(&mut self, system: S) -> &mut Self 
+    where
+        S: 'static + System<Args, Ret> + Send;
+
+    fn flush_render_systems(&mut self) -> &mut Self;
+}
+
+impl DoryenRenderSystemExt for Sonja { 
+    fn add_render_system<Args, Ret, S>(&mut self, system: S) -> &mut Self 
+        where
+            S: 'static + System<Args, Ret> + Send 
+    {
+        self.schedules.get_mut("render").unwrap().add_system(system);
+        self
+    }
+
+    fn flush_render_systems(&mut self) -> &mut Self {
+        self.schedules.get_mut("render").unwrap().flush();
+        self
+    }
+}
 
 struct SonjaDoryen {
-    pub sonja: Sonja,
+    sonja: Sonja,
+    raw_console: RawConsole,
+    gui_context: GuiContext,
 }
 
 impl SonjaDoryen {
+    fn interchange_console(&mut self, api: &mut dyn DoryenApi) {
+        std::mem::swap(api.con(), self.raw_console.0.as_mut().unwrap());
+    }
+
     fn is_exit(&self) -> bool {
         match self.sonja.events.get_handler::<AppExit>().unwrap().read() {
             Some(_) => true,
@@ -23,39 +56,39 @@ impl SonjaDoryen {
 }
 
 impl Engine for SonjaDoryen {
-    fn init(&mut self, _api: &mut dyn DoryenApi) {
-        let mut setup_systems = self.sonja.setup_systems.build();
+    fn init(&mut self, api: &mut dyn DoryenApi) {
+        self.gui_context.screen_size = api.con().get_size();
 
+        let mut setup_systems = self.sonja.schedules.get_mut("setup").unwrap().build();
+
+        self.interchange_console(api);
         setup_systems.execute((
             &mut self.sonja.world,
             &mut self.sonja.events,
             &mut self.sonja.time_handler,
             &mut self.sonja.physics_handler,
             &mut self.sonja.asset_manager,
+            &mut self.raw_console,
+            &mut self.gui_context,
         )).expect("Cannot execute setup schedule");
+        self.interchange_console(api);
     }
 
     fn update(&mut self, api: &mut dyn DoryenApi) -> Option<UpdateEvent> {
-        let mut systems = self.sonja.systems.build();
+        let mut update_systems = self.sonja.schedules.get_mut("update").unwrap().build();
 
-        systems.execute((
+        self.interchange_console(api);
+        update_systems.execute((
             &mut self.sonja.world,
             &mut self.sonja.events,
             &mut self.sonja.time_handler,
             &mut self.sonja.physics_handler,
             &mut self.sonja.asset_manager,
-        )).expect("Cannot execute setup schedule");
-
-        // Register colors
-        let mut color_events = self.sonja.events.get_handler::<RegisterColors>().unwrap();
-        if let Some(colors) = color_events.read() {
-            for (name, value) in colors.colors {
-                api.con().register_color(name, value);
-            }
-        }
-        color_events.clear();
+            &mut self.raw_console,
+            &mut self.gui_context,
+        )).expect("Cannot execute update schedule");
+        self.interchange_console(api);
         
-        // Check quit
         if self.is_exit() {
             Some(UpdateEvent::Exit)
         } else {
@@ -63,8 +96,28 @@ impl Engine for SonjaDoryen {
         }
     }
 
-    fn render(&mut self, _api: &mut dyn DoryenApi) {
-    
+    fn render(&mut self, api: &mut dyn DoryenApi) {
+        let mut render_systems = self.sonja.schedules.get_mut("render").unwrap()
+            .add_system(gui::render_gui)
+            .build();
+
+        self.interchange_console(api);
+        render_systems.execute((
+            &mut self.sonja.world,
+            &mut self.sonja.events,
+            &mut self.sonja.time_handler,
+            &mut self.sonja.physics_handler,
+            &mut self.sonja.asset_manager,
+            &mut self.raw_console,
+            &mut self.gui_context,
+        )).expect("Cannot execute update schedule");
+        self.interchange_console(api);
+
+        self.gui_context.ui.clear();
+    }
+
+    fn resize(&mut self, api: &mut dyn DoryenApi){
+        self.gui_context.screen_size = api.get_screen_size();
     }
 }
 
@@ -73,18 +126,14 @@ pub struct DoryenExtension;
 impl Extension for DoryenExtension {
     fn apply(&self, app: &mut Sonja) {
         app
-            .add_events::<RegisterColors>()
             .add_events::<AppExit>()
-
-            .set_runner(Box::new(sonja_doryen_run));
+            .set_runner(Box::new(sonja_doryen_run))
+            .schedules.insert("render", Schedule::builder());
     }
 }
 
 fn sonja_doryen_run(s: &mut Sonja){
-    let mut sonja = Sonja::init(WindowBuilder {
-        init_logger: Some(false), 
-        ..Default::default()
-    });
+    let mut sonja = empty_sonja();
     std::mem::swap(s, &mut sonja);
 
     let mut app = App::new(AppOptions::from(
@@ -93,57 +142,17 @@ fn sonja_doryen_run(s: &mut Sonja){
         }
     ));
 
-    app.set_engine(Box::new(SonjaDoryen { sonja }));
+    app.set_engine(Box::new(SonjaDoryen { 
+        sonja, 
+        raw_console: RawConsole::default(),
+        gui_context: GuiContext::default(),
+    }));
     app.run();
 }
 
-impl From<WindowBuilderWrapper> for AppOptions {
-    fn from(source: WindowBuilderWrapper) -> Self {
-        AppOptions {
-            window_title: source.title.unwrap_or("Doryen game").to_owned(),
-            fullscreen: source.fullscreen.unwrap_or(false),
-            resizable: source.resizable.unwrap_or(true),
-            
-            console_width: DEFAULT_CONSOLE_WIDTH,
-            console_height: DEFAULT_CONSOLE_HEIGHT,
-            screen_width: DEFAULT_CONSOLE_WIDTH * 8,
-            screen_height: DEFAULT_CONSOLE_HEIGHT * 8,
-            font_path: "Aesomatica_16x16.png".to_owned(),
-            vsync: true,
-            show_cursor: false,
-            intercept_close_request: false,
-            max_fps: 0,
-        }
-    }
-}
-
-#[derive(Default, Clone, Debug)]
-pub struct WindowBuilderWrapper {
-    pub inner: WindowBuilder,
-}
-
-impl WindowBuilderWrapper {
-    pub fn new() -> Self {
-        WindowBuilderWrapper::default()
-    }
-}
-
-impl From<WindowBuilder> for WindowBuilderWrapper {
-    fn from(source: WindowBuilder) -> Self {
-        WindowBuilderWrapper { inner: source }
-    }
-}
-
-impl Deref for WindowBuilderWrapper {
-    type Target = WindowBuilder;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl DerefMut for WindowBuilderWrapper {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
+fn empty_sonja() -> Sonja {
+    Sonja::init(WindowBuilder {
+        init_logger: false, 
+        ..Default::default()
+    })
 }
