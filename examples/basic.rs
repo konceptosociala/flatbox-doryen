@@ -1,8 +1,8 @@
-use sonja::prelude::*;
-use sonja_doryen::prelude::*;
+use flatbox::prelude::*;
+use flatbox_doryen::prelude::*;
 
 fn main() {
-    Sonja::init(WindowBuilder::default())
+    Flatbox::init(WindowBuilder::default())
         .default_systems()
         .apply_extension(DoryenExtension)
         .add_setup_system(init)

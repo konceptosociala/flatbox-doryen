@@ -1,11 +1,11 @@
-use sonja::prelude::*;
-use sonja_doryen::prelude::*;
+use flatbox::prelude::*;
+use flatbox_doryen::prelude::*;
 
 const TEXT_COLOR: Color = (0, 0, 0, 255);
 const BG_COLOR: Color = (200, 200, 200, 255);
 
 fn main() {
-    Sonja::init(WindowBuilder::default())
+    Flatbox::init(WindowBuilder::default())
         .default_systems()
         .apply_extension(DoryenExtension)
         .add_render_system(ui_system)

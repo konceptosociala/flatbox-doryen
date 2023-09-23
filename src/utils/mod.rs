@@ -4,7 +4,7 @@ pub mod console;
 pub mod input;
 
 use std::ops::{Deref, DerefMut};
-use sonja::WindowBuilder;
+use flatbox::WindowBuilder;
 
 use doryen::{AppOptions, DEFAULT_CONSOLE_WIDTH, DEFAULT_CONSOLE_HEIGHT};
 

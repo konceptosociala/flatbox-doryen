@@ -1,4 +1,4 @@
-use sonja::prelude::*;
+use flatbox::prelude::*;
 
 pub mod game;
 pub mod gui;
@@ -21,7 +21,7 @@ pub trait DoryenRenderSystemExt {
     fn flush_render_systems(&mut self) -> &mut Self;
 }
 
-impl DoryenRenderSystemExt for Sonja { 
+impl DoryenRenderSystemExt for Flatbox { 
     fn add_render_system<Args, Ret, S>(&mut self, system: S) -> &mut Self 
         where
             S: 'static + System<Args, Ret> + Send 
@@ -36,38 +36,38 @@ impl DoryenRenderSystemExt for Sonja {
     }
 }
 
-struct SonjaDoryen {
-    sonja: Sonja,
+struct FlatboxDoryen {
+    flatbox: Flatbox,
     raw_console: RawConsole,
     gui_context: GuiContext,
 }
 
-impl SonjaDoryen {
+impl FlatboxDoryen {
     fn interchange_console(&mut self, api: &mut dyn DoryenApi) {
         std::mem::swap(api.con(), self.raw_console.0.as_mut().unwrap());
     }
 
     fn is_exit(&self) -> bool {
-        match self.sonja.events.get_handler::<AppExit>().unwrap().read() {
+        match self.flatbox.events.get_handler::<AppExit>().unwrap().read() {
             Some(_) => true,
             _ => false,
         }
     }
 }
 
-impl Engine for SonjaDoryen {
+impl Engine for FlatboxDoryen {
     fn init(&mut self, api: &mut dyn DoryenApi) {
         self.gui_context.screen_size = api.con().get_size();
 
-        let mut setup_systems = self.sonja.schedules.get_mut("setup").unwrap().build();
+        let mut setup_systems = self.flatbox.schedules.get_mut("setup").unwrap().build();
 
         self.interchange_console(api);
         setup_systems.execute((
-            &mut self.sonja.world,
-            &mut self.sonja.events,
-            &mut self.sonja.time_handler,
-            &mut self.sonja.physics_handler,
-            &mut self.sonja.asset_manager,
+            &mut self.flatbox.world,
+            &mut self.flatbox.events,
+            &mut self.flatbox.time_handler,
+            &mut self.flatbox.physics_handler,
+            &mut self.flatbox.asset_manager,
             &mut self.raw_console,
             &mut self.gui_context,
         )).expect("Cannot execute setup schedule");
@@ -75,15 +75,15 @@ impl Engine for SonjaDoryen {
     }
 
     fn update(&mut self, api: &mut dyn DoryenApi) -> Option<UpdateEvent> {
-        let mut update_systems = self.sonja.schedules.get_mut("update").unwrap().build();
+        let mut update_systems = self.flatbox.schedules.get_mut("update").unwrap().build();
 
         self.interchange_console(api);
         update_systems.execute((
-            &mut self.sonja.world,
-            &mut self.sonja.events,
-            &mut self.sonja.time_handler,
-            &mut self.sonja.physics_handler,
-            &mut self.sonja.asset_manager,
+            &mut self.flatbox.world,
+            &mut self.flatbox.events,
+            &mut self.flatbox.time_handler,
+            &mut self.flatbox.physics_handler,
+            &mut self.flatbox.asset_manager,
             &mut self.raw_console,
             &mut self.gui_context,
         )).expect("Cannot execute update schedule");
@@ -97,17 +97,17 @@ impl Engine for SonjaDoryen {
     }
 
     fn render(&mut self, api: &mut dyn DoryenApi) {
-        let mut render_systems = self.sonja.schedules.get_mut("render").unwrap()
+        let mut render_systems = self.flatbox.schedules.get_mut("render").unwrap()
             .add_system(gui::render_gui)
             .build();
 
         self.interchange_console(api);
         render_systems.execute((
-            &mut self.sonja.world,
-            &mut self.sonja.events,
-            &mut self.sonja.time_handler,
-            &mut self.sonja.physics_handler,
-            &mut self.sonja.asset_manager,
+            &mut self.flatbox.world,
+            &mut self.flatbox.events,
+            &mut self.flatbox.time_handler,
+            &mut self.flatbox.physics_handler,
+            &mut self.flatbox.asset_manager,
             &mut self.raw_console,
             &mut self.gui_context,
         )).expect("Cannot execute update schedule");
@@ -124,34 +124,34 @@ impl Engine for SonjaDoryen {
 pub struct DoryenExtension;
 
 impl Extension for DoryenExtension {
-    fn apply(&self, app: &mut Sonja) {
+    fn apply(&self, app: &mut Flatbox) {
         app
             .add_events::<AppExit>()
-            .set_runner(Box::new(sonja_doryen_run))
+            .set_runner(Box::new(flatbox_doryen_run))
             .schedules.insert("render", Schedule::builder());
     }
 }
 
-fn sonja_doryen_run(s: &mut Sonja){
-    let mut sonja = empty_sonja();
-    std::mem::swap(s, &mut sonja);
+fn flatbox_doryen_run(s: &mut Flatbox){
+    let mut flatbox = empty_flatbox();
+    std::mem::swap(s, &mut flatbox);
 
     let mut app = App::new(AppOptions::from(
         WindowBuilderWrapper {
-            inner: sonja.window_builder.clone()
+            inner: flatbox.window_builder.clone()
         }
     ));
 
-    app.set_engine(Box::new(SonjaDoryen { 
-        sonja, 
+    app.set_engine(Box::new(FlatboxDoryen { 
+        flatbox, 
         raw_console: RawConsole::default(),
         gui_context: GuiContext::default(),
     }));
     app.run();
 }
 
-fn empty_sonja() -> Sonja {
-    Sonja::init(WindowBuilder {
+fn empty_flatbox() -> Flatbox {
+    Flatbox::init(WindowBuilder {
         init_logger: false, 
         ..Default::default()
     })

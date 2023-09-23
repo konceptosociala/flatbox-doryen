@@ -10,7 +10,7 @@ pub use text::*;
 
 use std::sync::Arc;
 use parking_lot::RwLock;
-use sonja::prelude::*;
+use flatbox::prelude::*;
 
 use crate::utils::console::RawConsole;
 
